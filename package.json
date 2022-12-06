@@ -1,0 +1,49 @@
+{
+  "name": "wingbot-bigquery",
+  "version": "0.1.0",
+  "description": "Google BigQuery connector for wingbot.ai",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test:lint && npm run test:unit",
+    "test:unit": "cross-env mocha --exit ./test",
+    "test:lint": "eslint --ext .js test src"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wingbotai/wingbot-bigquery.git"
+  },
+  "keywords": [
+    "wingbot",
+    "bigquery",
+    "chatbot",
+    "google"
+  ],
+  "author": "wingbot.ai",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/wingbotai/wingbot-bigquery/issues"
+  },
+  "homepage": "https://github.com/wingbotai/wingbot-bigquery#readme",
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "eslint": "^8.29.0",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-jsx-a11y": "^6.6.1",
+    "mocha": "^10.1.0",
+    "wingbot": "^3.46.0-alpha.3"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^6.0.3",
+    "deep-extend": "^0.6.0",
+    "is-subset": "^0.1.1",
+    "webalize": "^0.1.0"
+  },
+  "peerDependencies": {
+    "wingbot": "^3.44.0"
+  }
+}
