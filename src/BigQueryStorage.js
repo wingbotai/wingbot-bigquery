@@ -17,6 +17,7 @@ const { TrackingType } = require('wingbot');
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').SessionMetadata} SessionMetadata */ // eslint-disable-line max-len
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').GAUser} GAUser */
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').TrackingEvent} Event */
+/** @typedef {import('@google-cloud/bigquery').Table} Table */
 
 /* eslint object-curly-newline: 0 */
 
@@ -57,6 +58,43 @@ const SESSIONS_SCHEMA = {
         { name: 'action', type: 'STRING' },
         { name: 'sessionCount', type: 'INTEGER' },
         { name: 'lang', type: 'STRING', maxLength: '2' },
+        { name: 'nonInteractive', type: 'BOOLEAN', mode: 'REQUIRED' },
+
+        { name: 'didHandover', type: 'BOOLEAN', mode: 'REQUIRED' },
+        { name: 'feedback', type: 'INTEGER' },
+
+        { name: 'botId', type: 'STRING', maxLength: '36' }, // uuid length
+        { name: 'snapshot', type: 'STRING', maxLength: '14' }
+    ]
+};
+
+/** @type {TableSchema} */
+const PAGE_VIEWS_SCHEMA = {
+    fields: [
+        { name: 'pageId', type: 'STRING', maxLength: '36', mode: 'REQUIRED' }, // uuid length
+        { name: 'senderId', type: 'STRING', maxLength: '36', mode: 'REQUIRED' },
+        { name: 'sessionId', type: 'STRING', maxLength: '32', mode: 'REQUIRED' },
+
+        { name: 'sessionStart', type: 'TIMESTAMP', mode: 'REQUIRED' },
+        { name: 'sessionStartDate', type: 'DATETIME', mode: 'REQUIRED' },
+        { name: 'sessionDuration', type: 'INTEGER', mode: 'REQUIRED' },
+
+        { name: 'timestamp', type: 'TIMESTAMP', mode: 'REQUIRED' },
+        { name: 'datetime', type: 'DATETIME', mode: 'REQUIRED' },
+        { name: 'date', type: 'DATE', mode: 'REQUIRED' },
+
+        { name: 'action', type: 'STRING' },
+        { name: 'lastAction', type: 'STRING' },
+        { name: 'prevAction', type: 'STRING' },
+        { name: 'allActions', type: 'STRING', mode: 'REPEATED' },
+        { name: 'skill', type: 'STRING' },
+
+        { name: 'label', type: 'STRING' },
+        { name: 'value', type: 'INTEGER' },
+
+        { name: 'lang', type: 'STRING', maxLength: '2' },
+        { name: 'isGoto', type: 'BOOLEAN', mode: 'REQUIRED' },
+        { name: 'withUser', type: 'BOOLEAN', mode: 'REQUIRED' },
         { name: 'nonInteractive', type: 'BOOLEAN', mode: 'REQUIRED' },
 
         { name: 'botId', type: 'STRING', maxLength: '36' }, // uuid length
@@ -100,7 +138,7 @@ const CONVERSATIONS_SCHEMA = {
 
         { name: 'withUser', type: 'BOOLEAN', mode: 'REQUIRED' },
         { name: 'userId', type: 'STRING' },
-        { name: 'feedback', type: 'INTEGER', mode: 'REQUIRED' },
+        { name: 'feedback', type: 'INTEGER' },
 
         { name: 'sessionStart', type: 'TIMESTAMP', mode: 'REQUIRED' },
         { name: 'sessionStartDate', type: 'DATETIME', mode: 'REQUIRED' },
@@ -121,7 +159,10 @@ const CONVERSATIONS_SCHEMA = {
         { name: 'nonInteractive', type: 'BOOLEAN', mode: 'REQUIRED' },
 
         { name: 'botId', type: 'STRING', maxLength: '36' }, // uuid length
-        { name: 'snapshot', type: 'STRING', maxLength: '14' }
+        { name: 'snapshot', type: 'STRING', maxLength: '14' },
+
+        { name: 'sessionCount', type: 'INTEGER' },
+        { name: 'responseTexts', type: 'STRING', mode: 'REPEATED' }
     ]
 };
 
@@ -153,6 +194,8 @@ class BigQueryStorage {
             projectId
         });
 
+        this._projectId = projectId;
+        this._dataset = dataset;
         this._db = this._client.dataset(dataset);
 
         this._log = options.log || console;
@@ -164,12 +207,189 @@ class BigQueryStorage {
         this.SESSIONS = 'sessions';
         this.EVENTS = 'events';
         this.CONVERSATIONS = 'conversations';
+        this.PAGE_VIEWS = 'page_views';
+
+        this.VIEW_CONVERSATIONS = 'view_conversations';
+        this.VIEW_SKILLS = 'view_skills';
+        this.VIEW_SESSIONS = 'view_sessions';
 
         this.hasExtendedEvents = true;
         this.supportsArrays = true;
         this.useDescriptiveCategories = false;
         this.useExtendedScalars = true;
         this.parallelSessionInsert = true;
+
+        /** @type {TableMetadata[]} */
+        this.topology = [
+            {
+                name: this.EVENTS,
+                schema: EVENTS_SCHEMA,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    expirationMs: '3118560000000', // 10 years
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId', 'sessionId']
+                }
+            },
+            {
+                name: this.CONVERSATIONS,
+                schema: CONVERSATIONS_SCHEMA,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    expirationMs: '3118560000000', // 10 years
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId', 'sessionId']
+                }
+            },
+            {
+                name: this.SESSIONS,
+                schema: SESSIONS_SCHEMA,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    expirationMs: '3118560000000', // 10 years
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId', 'sessionId']
+                }
+            },
+            {
+                name: this.PAGE_VIEWS,
+                schema: PAGE_VIEWS_SCHEMA,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    expirationMs: '3118560000000', // 10 years
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId', 'sessionId']
+                }
+            },
+            {
+                name: this.VIEW_CONVERSATIONS,
+                description: this.CONVERSATIONS,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId']
+                },
+                materializedView: {
+                    enableRefresh: true,
+                    // The default value is "1800000" (30 minutes).
+                    // refreshIntervalMs: '',
+                    /**
+                     * [Required] A query whose result is persisted.
+                     */
+                    query: `SELECT
+                        \`date\`,
+                        pageId,
+                        APPROX_COUNT_DISTINCT (senderId) as senders,
+                        APPROX_COUNT_DISTINCT(sessionId) as sessions,
+                        APPROX_COUNT_DISTINCT (userId) as users,
+                        APPROX_COUNT_DISTINCT(IF(withUser, sessionId, null)) as userSessions,
+                        COUNT (*) as interactions,
+                        COUNTIF (nonInteractive) as nonInteractives,
+                        COUNTIF(isQuickReply) as quickReplies,
+                        COUNTIF (isText) as texts,
+                        COUNTIF(isPostback) as postbacks,
+                        COUNTIF (isPassThread) as passThreads, COUNTIF (isAttachment) as attachments,
+                        COUNTIF (isContextUpdate) as contextUpdates,
+                        APPROX_COUNT_DISTINCT(IF(didHandover, sessionId, null)) as didHandovers,
+                        COUNTIF(feedback >= 0) as feedbacks,
+                        SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
+                        COUNTIF (\`value\` = 1) as notHandled,
+                        COUNTIF (\`value\` = 0) as handled,
+                        COUNT(intentScore) as intentScores,
+                        SUM(intentScore) as intentScoreSum
+                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    GROUP BY 1, 2`
+                }
+            },
+            {
+                name: this.VIEW_SESSIONS,
+                description: this.CONVERSATIONS,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId', 'sessionId']
+                },
+                materializedView: {
+                    enableRefresh: true,
+                    query: `SELECT
+                        \`date\`,
+                        \`pageId\`,
+                        \`sessionId\`,
+                        ANY_VALUE(sessionStart) as sessionStart,
+                        ANY_VALUE(sessionStartDate) as sessionStartDate,
+                        MAX(sessionDuration) as sessionDuration,
+                        ANY_VALUE(sessionCount) as sessionCount,
+                        COUNT (*) as interactions,
+                        COUNTIF (nonInteractive) as nonInteractives,
+                        COUNTIF(isQuickReply) as quickReplies,
+                        COUNTIF (isText) as texts,
+                        COUNTIF(isPostback) as postbacks,
+                        COUNTIF (isPassThread) as passThreads,
+                        COUNTIF (isAttachment) as attachments,
+                        COUNTIF (isContextUpdate) as contextUpdates,
+                        SUM(\`value\`) as notHandled,
+                        LOGICAL_OR(didHandover) as didHandover,
+                        COUNTIF(feedback >= 0) as feedbacks,
+                        SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
+                        MAX(feedback) as feedbackMax
+                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    GROUP BY 1, 2, 3`
+                }
+            },
+            {
+                name: this.VIEW_SKILLS,
+                description: this.CONVERSATIONS,
+                timePartitioning: {
+                    type: 'DAY', // 'MONTH'
+                    field: 'date'
+                },
+                clustering: {
+                    fields: ['pageId']
+                },
+                materializedView: {
+                    enableRefresh: true,
+                    query: `SELECT
+                        \`date\`,
+                        \`pageId\`,
+                        \`skill\`,
+                        APPROX_COUNT_DISTINCT (senderId) as senders,
+                        APPROX_COUNT_DISTINCT(sessionId) as sessions,
+                        APPROX_COUNT_DISTINCT (userId) as users,
+                        APPROX_COUNT_DISTINCT(IF(withUser, sessionId, null)) as userSessions,
+                        COUNT (*) as interactions,
+                        COUNTIF (nonInteractive) as nonInteractives,
+                        COUNTIF(isQuickReply) as quickReplies,
+                        COUNTIF (isText) as texts,
+                        COUNTIF(isPostback) as postbacks,
+                        COUNTIF (isPassThread) as passThreads,
+                        COUNTIF (isAttachment) as attachments,
+                        COUNTIF (isContextUpdate) as contextUpdates,
+                        SUM(\`value\`) as notHandled,
+                        MAX(didHandover) as didHandover,
+                        COUNTIF(feedback >= 0) as feedbacks,
+                        SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
+                        MAX(feedback) as feedbackMax
+                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    GROUP BY 1, 2, 3`
+                }
+            }
+        ];
+    }
+
+    preHeat () {
+        return this.db();
     }
 
     async db () {
@@ -225,21 +445,31 @@ class BigQueryStorage {
 
     /**
      *
+     * @param {Table[]} tables
      * @param {TableMetadata} definition
      * @returns {Promise}
      */
-    async _upsertTable (definition) {
+    async _upsertTable (tables, definition) {
         let exists = false;
         try {
             const { name, ...metadata } = definition;
             const table = this._db.table(name);
-            [exists] = await table.exists();
+
+            exists = tables.some((t) => t.id === name);
+
+            if (definition.materializedView) {
+                const sourceTableExists = tables.some((t) => t.id === metadata.description);
+
+                if (!sourceTableExists) {
+                    this._log.log(`BigQueryStorage: view "${name}" will be inserted later, because the source table "${metadata.description}" doesn't exist.`);
+                    return;
+                }
+            }
 
             if (!exists) {
                 this._log.log(`BigQueryStorage: creating table ${name}...`);
                 await table.create(metadata);
                 this._log.log(`BigQueryStorage: table ${name} created`);
-                // await this._db.createTable(name, metadata);
                 return;
             }
 
@@ -264,44 +494,12 @@ class BigQueryStorage {
 
     async _updateTopology () {
         const d = Date.now();
-        await Promise.all([
-            this._upsertTable({
-                name: this.EVENTS,
-                schema: EVENTS_SCHEMA,
-                timePartitioning: {
-                    type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
-                    field: 'date'
-                },
-                clustering: {
-                    fields: ['pageId', 'sessionId']
-                }
-            }),
-            this._upsertTable({
-                name: this.CONVERSATIONS,
-                schema: CONVERSATIONS_SCHEMA,
-                timePartitioning: {
-                    type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
-                    field: 'date'
-                },
-                clustering: {
-                    fields: ['pageId', 'sessionId']
-                }
-            }),
-            this._upsertTable({
-                name: this.SESSIONS,
-                schema: SESSIONS_SCHEMA,
-                timePartitioning: {
-                    type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
-                    field: 'date'
-                },
-                clustering: {
-                    fields: ['pageId', 'sessionId']
-                }
-            })
-        ]);
+
+        const [tables] = await this._db.getTables();
+
+        await Promise.all(
+            this.topology.map((t) => this._upsertTable(tables, t))
+        );
         if (this._throwExceptions) {
             this._log.log(`BigQueryStorage: topology\t${Date.now() - d}`);
         }
@@ -316,7 +514,6 @@ class BigQueryStorage {
      * @param {SessionMetadata} [metadata]
      * @param {number} [ts]
      * @param {boolean} [nonInteractive]
-     * @param {string} [timeZone]
      * @returns {Promise}
      */
     async createUserSession (
@@ -324,16 +521,19 @@ class BigQueryStorage {
         senderId,
         sessionId,
         metadata,
-        ts = Date.now(),
-        nonInteractive = false,
-        timeZone = 'UTC'
+        ts,
+        nonInteractive = false
     ) {
         const {
             sessionCount,
             botId,
             snapshot,
             lang,
-            action
+            action,
+            didHandover,
+            feedback,
+            sessionStart,
+            timeZone
         } = metadata;
 
         await this._insert(this.SESSIONS, [
@@ -341,15 +541,17 @@ class BigQueryStorage {
                 pageId,
                 senderId,
                 sessionId,
-                sessionStart: this._dateTime(ts),
-                sessionStartDate: this._dateTime(ts, timeZone),
-                date: this._date(ts, timeZone),
+                sessionStart: this._dateTime(sessionStart),
+                sessionStartDate: this._dateTime(sessionStart, timeZone),
+                date: this._date(sessionStart, timeZone),
                 action,
                 sessionCount,
                 nonInteractive,
                 lang,
                 botId,
-                snapshot
+                snapshot,
+                didHandover,
+                feedback
             }
         ]);
     }
@@ -368,7 +570,7 @@ class BigQueryStorage {
      * @param {number} [ts]
      * @param {boolean} [nonInteractive]
      * @param {boolean} [sessionStarted]
-     * @param {string} [timeZone]
+     * @param {SessionMetadata} [metadata]
      * @returns {Promise}
      */
     async storeEvents (
@@ -380,21 +582,36 @@ class BigQueryStorage {
         ts = Date.now(),
         nonInteractive = false,
         sessionStarted = false, // eslint-disable-line no-unused-vars
-        timeZone = 'UTC'
+        metadata = {}
     ) {
+        const {
+            botId,
+            snapshot,
+            // didHandover,
+            // feedback,
+            sessionCount,
+            sessionDuration,
+            sessionStart,
+            timeZone,
+            responseTexts
+        } = metadata;
+
         const conversations = [];
+        const pageViews = [];
+
         const events = trackingEvents
             .filter((e) => {
-                if (e.type === TrackingType.CONVERSATION_EVENT && 'allActions' in e) {
+                if (e.type === TrackingType.CONVERSATION_EVENT && 'isQuickReply' in e) {
                     conversations.push({
                         pageId,
                         senderId,
                         sessionId,
                         timestamp: this._dateTime(ts),
                         datetime: this._dateTime(ts, timeZone),
-                        date: this._date(ts, timeZone),
+                        date: this._date(sessionStart, timeZone),
                         category: e.category,
                         action: this._nullable(e.action),
+                        lastAction: this._nullable(e.lastAction),
                         label: this._nullable(e.label),
                         value: this._nullable(e.value),
                         lang: this._nullable(e.lang),
@@ -417,9 +634,9 @@ class BigQueryStorage {
                         userId: this._nullable(user && user.id),
                         feedback: e.feedback,
 
-                        sessionStart: this._dateTime(e.sessionStart),
-                        sessionStartDate: this._dateTime(e.sessionStart, timeZone),
-                        sessionDuration: e.sessionDuration,
+                        sessionStart: this._dateTime(sessionStart),
+                        sessionStartDate: this._dateTime(sessionStart, timeZone),
+                        sessionDuration,
 
                         winnerAction: this._nullable(e.winnerAction),
                         winnerIntent: this._nullable(e.winnerIntent),
@@ -435,10 +652,45 @@ class BigQueryStorage {
 
                         nonInteractive,
 
-                        snapshot: this._nullable(e.snapshot),
-                        botId: this._nullable(e.botId)
+                        snapshot: this._nullable(snapshot),
+                        botId: this._nullable(botId),
+
+                        sessionCount,
+                        responseTexts
                     });
                     return false;
+                }
+                if (e.type === TrackingType.PAGE_VIEW && 'isGoto' in e) {
+                    pageViews.push({
+                        pageId,
+                        senderId,
+                        sessionId,
+
+                        timestamp: this._dateTime(ts),
+                        datetime: this._dateTime(ts, timeZone),
+                        date: this._date(sessionStart, timeZone),
+
+                        sessionStart: this._dateTime(sessionStart),
+                        sessionStartDate: this._dateTime(sessionStart, timeZone),
+                        sessionDuration,
+
+                        action: this._nullable(e.action),
+                        lastAction: this._nullable(e.lastAction),
+                        prevAction: this._nullable(e.prevAction),
+                        allActions: e.allActions,
+                        skill: this._nullable(e.skill),
+
+                        lang: this._nullable(e.lang),
+                        isGoto: e.isGoto,
+                        withUser: e.withUser,
+                        nonInteractive,
+
+                        label: this._nullable(e.label),
+                        value: this._nullable(e.value),
+
+                        snapshot: this._nullable(snapshot),
+                        botId: this._nullable(botId)
+                    });
                 }
                 return true;
             })
@@ -448,7 +700,7 @@ class BigQueryStorage {
                 sessionId,
                 timestamp: this._dateTime(ts),
                 datetime: this._dateTime(ts, timeZone),
-                date: this._date(ts, timeZone),
+                date: this._date(sessionStart, timeZone),
                 type: e.type,
                 category: e.category,
                 action: this._nullable(e.action),
@@ -461,7 +713,8 @@ class BigQueryStorage {
         const d = Date.now();
         await Promise.all([
             this._insert(this.CONVERSATIONS, conversations),
-            this._insert(this.EVENTS, events)
+            this._insert(this.EVENTS, events),
+            this._insert(this.PAGE_VIEWS, pageViews)
         ]);
         if (this._throwExceptions) {
             this._log.log(`BigQueryStorage: inserts\t${Date.now() - d}`);
