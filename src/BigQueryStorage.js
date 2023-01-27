@@ -39,6 +39,7 @@ const EVENTS_SCHEMA = {
         { name: 'label', type: 'STRING' },
         { name: 'value', type: 'INTEGER' },
         { name: 'lang', type: 'STRING', maxLength: '2' },
+        { name: 'pageCategory', type: 'STRING' },
 
         { name: 'nonInteractive', type: 'BOOLEAN', mode: 'REQUIRED' }
     ]
@@ -155,6 +156,8 @@ const CONVERSATIONS_SCHEMA = {
         { name: 'entities', type: 'STRING', mode: 'REPEATED' },
 
         { name: 'allActions', type: 'STRING', mode: 'REPEATED' },
+        { name: 'pagePath', type: 'STRING' },
+        { name: 'pageCategory', type: 'STRING' },
 
         { name: 'nonInteractive', type: 'BOOLEAN', mode: 'REQUIRED' },
 
@@ -219,6 +222,8 @@ class BigQueryStorage {
         this.useExtendedScalars = true;
         this.parallelSessionInsert = true;
 
+        const expirationMs = '3118560000000'; // 10 years;
+
         /** @type {TableMetadata[]} */
         this.topology = [
             {
@@ -226,7 +231,7 @@ class BigQueryStorage {
                 schema: EVENTS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -238,7 +243,7 @@ class BigQueryStorage {
                 schema: CONVERSATIONS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -250,7 +255,7 @@ class BigQueryStorage {
                 schema: SESSIONS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -262,7 +267,7 @@ class BigQueryStorage {
                 schema: PAGE_VIEWS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
-                    expirationMs: '3118560000000', // 10 years
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -274,6 +279,7 @@ class BigQueryStorage {
                 description: this.CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -290,8 +296,13 @@ class BigQueryStorage {
                         \`date\`,
                         pageId,
                         APPROX_COUNT_DISTINCT (senderId) as senders,
+                        APPROX_COUNT_DISTINCT (IF((sessionDuration = 0 AND sessionCount = 1) OR nonInteractive, null, senderId)) as sendersNotEmpty,
+                        COUNTIF(sessionDuration = 0 AND sessionCount = 1) as newSendersPrecise,
                         APPROX_COUNT_DISTINCT(sessionId) as sessions,
+                        APPROX_COUNT_DISTINCT (IF((sessionDuration = 0 AND sessionCount = 1) OR nonInteractive, null, sessionId)) as sessionsNotEmpty,
+                        COUNTIF(sessionDuration = 0) as sessionsPrecise,
                         APPROX_COUNT_DISTINCT (userId) as users,
+                        APPROX_COUNT_DISTINCT (IF((sessionDuration = 0 AND sessionCount = 1) OR nonInteractive, null, userId)) as usersNotEmpty,
                         APPROX_COUNT_DISTINCT(IF(withUser, sessionId, null)) as userSessions,
                         COUNT (*) as interactions,
                         COUNTIF (nonInteractive) as nonInteractives,
@@ -302,6 +313,12 @@ class BigQueryStorage {
                         COUNTIF (isContextUpdate) as contextUpdates,
                         APPROX_COUNT_DISTINCT(IF(didHandover, sessionId, null)) as didHandovers,
                         COUNTIF(feedback >= 0) as feedbacks,
+                        COUNTIF(feedback = 0) as feedback0,
+                        COUNTIF(feedback = 1) as feedback1,
+                        COUNTIF(feedback = 2) as feedback2,
+                        COUNTIF(feedback = 3) as feedback3,
+                        COUNTIF(feedback = 4) as feedback4,
+                        COUNTIF(feedback = 5) as feedback5,
                         SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
                         COUNTIF (\`value\` = 1) as notHandled,
                         COUNTIF (\`value\` = 0) as handled,
@@ -316,6 +333,7 @@ class BigQueryStorage {
                 description: this.CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -327,6 +345,7 @@ class BigQueryStorage {
                         \`date\`,
                         \`pageId\`,
                         \`sessionId\`,
+                        ANY_VALUE(senderId) as senderId,
                         ANY_VALUE(sessionStart) as sessionStart,
                         ANY_VALUE(sessionStartDate) as sessionStartDate,
                         MAX(sessionDuration) as sessionDuration,
@@ -353,6 +372,7 @@ class BigQueryStorage {
                 description: this.CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
+                    expirationMs,
                     field: 'date'
                 },
                 clustering: {
@@ -365,7 +385,9 @@ class BigQueryStorage {
                         \`pageId\`,
                         \`skill\`,
                         APPROX_COUNT_DISTINCT (senderId) as senders,
+                        APPROX_COUNT_DISTINCT (IF((sessionDuration = 0 AND sessionCount = 1) OR nonInteractive, null, senderId)) as sendersNotEmpty,
                         APPROX_COUNT_DISTINCT(sessionId) as sessions,
+                        APPROX_COUNT_DISTINCT (IF((sessionDuration = 0 AND sessionCount = 1) OR nonInteractive, null, sessionId)) as sessionsNotEmpty,
                         APPROX_COUNT_DISTINCT (userId) as users,
                         APPROX_COUNT_DISTINCT(IF(withUser, sessionId, null)) as userSessions,
                         COUNT (*) as interactions,
@@ -481,6 +503,17 @@ class BigQueryStorage {
             }
 
             deepExtend(md, metadata);
+
+            if (definition.materializedView) {
+                this._log.log(`BigQueryStorage: removing view ${name}...`);
+                await table.delete({ ignoreNotFound: true });
+
+                this._log.log(`BigQueryStorage: creating view ${name} again...`);
+                await table.create(metadata);
+                this._log.log(`BigQueryStorage: view ${name} updated`);
+                return;
+            }
+
             this._log.log(`BigQueryStorage: updating table ${name}...`);
             await table.setMetadata(md);
             this._log.log(`BigQueryStorage: table ${name} updated`);
@@ -613,7 +646,7 @@ class BigQueryStorage {
                         action: this._nullable(e.action),
                         lastAction: this._nullable(e.lastAction),
                         label: this._nullable(e.label),
-                        value: this._nullable(e.value),
+                        value: typeof e.value === 'number' ? e.value : null,
                         lang: this._nullable(e.lang),
                         skill: this._nullable(e.skill),
 
@@ -649,6 +682,8 @@ class BigQueryStorage {
                         entities: e.entities,
 
                         allActions: e.allActions,
+                        pagePath: this._nullable(e.pagePath),
+                        pageCategory: this._nullable(e.pageCategory),
 
                         nonInteractive,
 
@@ -686,7 +721,7 @@ class BigQueryStorage {
                         nonInteractive,
 
                         label: this._nullable(e.label),
-                        value: this._nullable(e.value),
+                        value: typeof e.value === 'number' ? e.value : null,
 
                         snapshot: this._nullable(snapshot),
                         botId: this._nullable(botId)
@@ -705,7 +740,7 @@ class BigQueryStorage {
                 category: e.category,
                 action: this._nullable(e.action),
                 label: this._nullable(e.label),
-                value: this._nullable(e.value),
+                value: typeof e.value === 'number' ? e.value : null,
                 lang: this._nullable(e.lang),
                 nonInteractive
             }));
