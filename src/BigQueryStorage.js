@@ -65,7 +65,11 @@ const SESSIONS_SCHEMA = {
         { name: 'feedback', type: 'INTEGER' },
 
         { name: 'botId', type: 'STRING', maxLength: '36' }, // uuid length
-        { name: 'snapshot', type: 'STRING', maxLength: '14' }
+        { name: 'snapshot', type: 'STRING', maxLength: '14' },
+
+        { name: 'browserName', type: 'STRING' },
+        { name: 'osName', type: 'STRING' },
+        { name: 'deviceType', type: 'STRING' }
     ]
 };
 
@@ -177,7 +181,7 @@ const CONVERSATIONS_SCHEMA = {
 
 /**
  * @class {BigQueryStorage}
- * @implements IAnalyticsStorage
+ * @implements {IAnalyticsStorage}
  */
 class BigQueryStorage {
 
@@ -566,7 +570,10 @@ class BigQueryStorage {
             didHandover,
             feedback,
             sessionStart,
-            timeZone
+            timeZone,
+            browserName = null,
+            osName = null,
+            deviceType = null
         } = metadata;
 
         await this._insert(this.SESSIONS, [
@@ -584,7 +591,10 @@ class BigQueryStorage {
                 botId,
                 snapshot,
                 didHandover,
-                feedback
+                feedback,
+                browserName,
+                osName,
+                deviceType
             }
         ]);
     }
@@ -726,6 +736,7 @@ class BigQueryStorage {
                         snapshot: this._nullable(snapshot),
                         botId: this._nullable(botId)
                     });
+                    return false;
                 }
                 return true;
             })
