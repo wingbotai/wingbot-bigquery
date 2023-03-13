@@ -126,6 +126,8 @@ const CONVERSATIONS_SCHEMA = {
         { name: 'value', type: 'INTEGER' },
         { name: 'lang', type: 'STRING', maxLength: '2' },
         { name: 'skill', type: 'STRING' },
+        { name: 'prevSkill', type: 'STRING' },
+        { name: 'pathname', type: 'STRING' },
 
         { name: 'text', type: 'STRING' },
 
@@ -659,6 +661,8 @@ class BigQueryStorage {
                         value: typeof e.value === 'number' ? e.value : null,
                         lang: this._nullable(e.lang),
                         skill: this._nullable(e.skill),
+                        prevSkill: this._nullable(e.prevSkill),
+                        pathname: this._nullable(e.pathname),
 
                         text: this._nullable(e.text),
                         expected: this._nullable(e.expected),
