@@ -3,10 +3,8 @@
  */
 'use strict';
 
-const isSubset = require('is-subset');
-const deepExtend = require('deep-extend');
-const { BigQuery } = require('@google-cloud/bigquery');
 const { TrackingType } = require('wingbot');
+const BaseBigQueryStorage = require('./BaseBigQueryStorage');
 
 /** @typedef {import('@google-cloud/bigquery').BigQueryOptions['credentials']} Credentials */
 /** @typedef {import('@google-cloud/bigquery').TableMetadata} TableMetadata */
@@ -185,7 +183,7 @@ const CONVERSATIONS_SCHEMA = {
  * @class {BigQueryStorage}
  * @implements {IAnalyticsStorage}
  */
-class BigQueryStorage {
+class BigQueryStorage extends BaseBigQueryStorage {
 
     /**
      *
@@ -198,42 +196,18 @@ class BigQueryStorage {
      * @param {boolean} [options.passiveSchema] - disables automatic topology updates
      */
     constructor (googleCredentials, projectId, dataset, options = {}) {
-        this._client = new BigQuery({
-            credentials: googleCredentials,
-            projectId
-        });
-
-        this._projectId = projectId;
-        this._dataset = dataset;
-        this._db = this._client.dataset(dataset);
-
-        this._log = options.log || console;
-        this._passiveSchema = !!options.passiveSchema;
-        this._throwExceptions = !!options.throwExceptions;
-
-        this._schemaUpdated = null;
-
-        this.SESSIONS = 'sessions';
-        this.EVENTS = 'events';
-        this.CONVERSATIONS = 'conversations';
-        this.PAGE_VIEWS = 'page_views';
-
-        this.VIEW_CONVERSATIONS = 'view_conversations';
-        this.VIEW_SKILLS = 'view_skills';
-        this.VIEW_SESSIONS = 'view_sessions';
-
-        this.hasExtendedEvents = true;
-        this.supportsArrays = true;
-        this.useDescriptiveCategories = false;
-        this.useExtendedScalars = true;
-        this.parallelSessionInsert = true;
-
+        const SESSIONS = 'sessions';
+        const EVENTS = 'events';
+        const CONVERSATIONS = 'conversations';
+        const PAGE_VIEWS = 'page_views';
+        const VIEW_CONVERSATIONS = 'view_conversations';
+        const VIEW_SKILLS = 'view_skills';
+        const VIEW_SESSIONS = 'view_sessions';
         const expirationMs = '3118560000000'; // 10 years;
-
         /** @type {TableMetadata[]} */
-        this.topology = [
+        const topology = [
             {
-                name: this.EVENTS,
+                name: EVENTS,
                 schema: EVENTS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
@@ -245,7 +219,7 @@ class BigQueryStorage {
                 }
             },
             {
-                name: this.CONVERSATIONS,
+                name: CONVERSATIONS,
                 schema: CONVERSATIONS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
@@ -257,7 +231,7 @@ class BigQueryStorage {
                 }
             },
             {
-                name: this.SESSIONS,
+                name: SESSIONS,
                 schema: SESSIONS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
@@ -269,7 +243,7 @@ class BigQueryStorage {
                 }
             },
             {
-                name: this.PAGE_VIEWS,
+                name: PAGE_VIEWS,
                 schema: PAGE_VIEWS_SCHEMA,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
@@ -281,8 +255,8 @@ class BigQueryStorage {
                 }
             },
             {
-                name: this.VIEW_CONVERSATIONS,
-                description: this.CONVERSATIONS,
+                name: VIEW_CONVERSATIONS,
+                description: CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
                     expirationMs,
@@ -330,13 +304,13 @@ class BigQueryStorage {
                         COUNTIF (\`value\` = 0) as handled,
                         COUNT(intentScore) as intentScores,
                         SUM(intentScore) as intentScoreSum
-                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    FROM \`${projectId}.${dataset}.${CONVERSATIONS}\`
                     GROUP BY 1, 2`
                 }
             },
             {
-                name: this.VIEW_SESSIONS,
-                description: this.CONVERSATIONS,
+                name: VIEW_SESSIONS,
+                description: CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
                     expirationMs,
@@ -369,13 +343,13 @@ class BigQueryStorage {
                         COUNTIF(feedback >= 0) as feedbacks,
                         SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
                         MAX(feedback) as feedbackMax
-                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    FROM \`${projectId}.${dataset}.${CONVERSATIONS}\`
                     GROUP BY 1, 2, 3`
                 }
             },
             {
-                name: this.VIEW_SKILLS,
-                description: this.CONVERSATIONS,
+                name: VIEW_SKILLS,
+                description: CONVERSATIONS,
                 timePartitioning: {
                     type: 'DAY', // 'MONTH'
                     expirationMs,
@@ -409,140 +383,22 @@ class BigQueryStorage {
                         COUNTIF(feedback >= 0) as feedbacks,
                         SUM(IF (feedback >= 0, feedback, 0)) as feedbackSum,
                         MAX(feedback) as feedbackMax
-                    FROM \`${projectId}.${dataset}.${this.CONVERSATIONS}\`
+                    FROM \`${projectId}.${dataset}.${CONVERSATIONS}\`
                     GROUP BY 1, 2, 3`
                 }
             }
         ];
-    }
+        super(googleCredentials, projectId, dataset, topology, options);
 
-    preHeat () {
-        return this.db();
-    }
+        this.SESSIONS = SESSIONS;
+        this.EVENTS = EVENTS;
+        this.CONVERSATIONS = CONVERSATIONS;
+        this.PAGE_VIEWS = PAGE_VIEWS;
 
-    async db () {
-        if (this._schemaUpdated === true || this._passiveSchema) {
-            return this._db;
-        }
-        if (!this._schemaUpdated) {
-            this._schemaUpdated = this._updateTopology();
-        }
-        try {
-            await this._schemaUpdated;
-            this._schemaUpdated = true;
-        } catch (e) {
-            this._schemaUpdated = null;
-            this._log.error('BigQueryStorage: failed to create/update topology', e);
-            throw e;
-        }
-        return this._db;
-    }
+        this.VIEW_CONVERSATIONS = VIEW_CONVERSATIONS;
+        this.VIEW_SKILLS = VIEW_SKILLS;
+        this.VIEW_SESSIONS = VIEW_SESSIONS;
 
-    /**
-     * @param {IGALogger} logger
-     */
-    setDefaultLogger (logger) {
-        if (this._log === console) {
-            this._logger = logger;
-        }
-    }
-
-    /**
-     * get date like "YYYY-MM-DD"
-     *
-     * @param {number} timestamp
-     * @param {string} timeZone
-     * @returns {string}
-     */
-    _date (timestamp, timeZone = 'UTC') {
-        return new Date(timestamp)
-            .toLocaleDateString('sv-SE', { timeZone });
-    }
-
-    /**
-     * get date like "YYYY-MM-DD HH:II:SS"
-     *
-     * @param {number} timestamp
-     * @param {string} timeZone
-     * @returns {string}
-     */
-    _dateTime (timestamp, timeZone = 'UTC') {
-        return new Date(timestamp)
-            .toLocaleString('sv-SE', { timeZone });
-    }
-
-    /**
-     *
-     * @param {Table[]} tables
-     * @param {TableMetadata} definition
-     * @returns {Promise}
-     */
-    async _upsertTable (tables, definition) {
-        let exists = false;
-        try {
-            const { name, ...metadata } = definition;
-            const table = this._db.table(name);
-
-            exists = tables.some((t) => t.id === name);
-
-            if (definition.materializedView) {
-                const sourceTableExists = tables.some((t) => t.id === metadata.description);
-
-                if (!sourceTableExists) {
-                    this._log.log(`BigQueryStorage: view "${name}" will be inserted later, because the source table "${metadata.description}" doesn't exist.`);
-                    return;
-                }
-            }
-
-            if (!exists) {
-                this._log.log(`BigQueryStorage: creating table ${name}...`);
-                await table.create(metadata);
-                this._log.log(`BigQueryStorage: table ${name} created`);
-                return;
-            }
-
-            const [md] = await table.getMetadata();
-
-            if (isSubset(md, metadata)) {
-                this._log.log(`BigQueryStorage: table ${name} is up to date`);
-                return;
-            }
-
-            deepExtend(md, metadata);
-
-            if (definition.materializedView) {
-                this._log.log(`BigQueryStorage: removing view ${name}...`);
-                await table.delete({ ignoreNotFound: true });
-
-                this._log.log(`BigQueryStorage: creating view ${name} again...`);
-                await table.create(metadata);
-                this._log.log(`BigQueryStorage: view ${name} updated`);
-                return;
-            }
-
-            this._log.log(`BigQueryStorage: updating table ${name}...`);
-            await table.setMetadata(md);
-            this._log.log(`BigQueryStorage: table ${name} updated`);
-        } catch (e) {
-            this._log.error('BigQueryStorage: failed to update topology', e);
-            if (!exists || this._throwExceptions) {
-                throw e;
-            }
-        }
-    }
-
-    async _updateTopology () {
-        const d = Date.now();
-
-        const [tables] = await this._db.getTables();
-
-        await Promise.all(
-            this.topology.map((t) => this._upsertTable(tables, t))
-        );
-        if (this._throwExceptions) {
-            this._log.log(`BigQueryStorage: topology\t${Date.now() - d}`);
-        }
-        return true;
     }
 
     /**
@@ -768,30 +624,6 @@ class BigQueryStorage {
         ]);
         if (this._throwExceptions) {
             this._log.log(`BigQueryStorage: inserts\t${Date.now() - d}`);
-        }
-    }
-
-    /**
-     *
-     * @param {string} table
-     * @param {object[]} data
-     */
-    async _insert (table, data) {
-        if (data.length === 0) {
-            return;
-        }
-        try {
-            const db = await this.db();
-            await db.table(table).insert(data);
-        } catch (e) {
-            let details = null;
-            if (e.response && e.response.insertErrors) {
-                details = e.response.insertErrors.flatMap((er) => er.errors || []);
-            }
-            this._log.error(`BigQueryStorage: insert to "${table}" failed`, e, details);
-            if (this._throwExceptions) {
-                throw e;
-            }
         }
     }
 }
