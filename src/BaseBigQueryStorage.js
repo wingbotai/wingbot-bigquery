@@ -9,13 +9,8 @@ const { BigQuery } = require('@google-cloud/bigquery');
 
 /** @typedef {import('@google-cloud/bigquery').BigQueryOptions['credentials']} Credentials */
 /** @typedef {import('@google-cloud/bigquery').TableMetadata} TableMetadata */
-/** @typedef {import('@google-cloud/bigquery').TableSchema} TableSchema */
 
-/** @typedef {import('wingbot/src/analytics/onInteractionHandler').IAnalyticsStorage} IAnalyticsStorage */ // eslint-disable-line max-len
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').IGALogger} IGALogger */
-/** @typedef {import('wingbot/src/analytics/onInteractionHandler').SessionMetadata} SessionMetadata */ // eslint-disable-line max-len
-/** @typedef {import('wingbot/src/analytics/onInteractionHandler').GAUser} GAUser */
-/** @typedef {import('wingbot/src/analytics/onInteractionHandler').TrackingEvent} Event */
 /** @typedef {import('@google-cloud/bigquery').Table} Table */
 
 /* eslint object-curly-newline: 0 */
