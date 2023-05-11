@@ -23,7 +23,6 @@ const { BigQuery } = require('@google-cloud/bigquery');
 
 /**
  * @class {BaseBigQueryStorage}
- *
  */
 class BaseBigQueryStorage {
 
@@ -32,6 +31,7 @@ class BaseBigQueryStorage {
      * @param {Credentials} googleCredentials
      * @param {string} projectId
      * @param {string} dataset
+     * @param {TableMetadata[]} topology
      * @param {object} [options]
      * @param {Logger} [options.log]
      * @param {boolean} [options.throwExceptions]

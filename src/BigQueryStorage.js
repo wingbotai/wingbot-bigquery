@@ -8,11 +8,13 @@ const BaseBigQueryStorage = require('./BaseBigQueryStorage');
 
 /** @typedef {import('@google-cloud/bigquery').BigQueryOptions['credentials']} Credentials */
 /** @typedef {import('@google-cloud/bigquery').TableSchema} TableSchema */
+/** @typedef {import('@google-cloud/bigquery').TableMetadata} TableMetadata */
 
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').IAnalyticsStorage} IAnalyticsStorage */ // eslint-disable-line max-len
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').SessionMetadata} SessionMetadata */ // eslint-disable-line max-len
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').GAUser} GAUser */
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').TrackingEvent} Event */
+/** @typedef {import('./BaseBigQueryStorage').Logger} Logger */
 
 /* eslint object-curly-newline: 0 */
 
@@ -169,12 +171,6 @@ const CONVERSATIONS_SCHEMA = {
         { name: 'responseTexts', type: 'STRING', mode: 'REPEATED' }
     ]
 };
-
-/**
- * @typedef {object} Logger
- * @prop {Function} log
- * @prop {Function} error
- */
 
 /**
  * @class {BigQueryStorage}
