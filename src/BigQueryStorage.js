@@ -66,7 +66,14 @@ const SESSIONS_SCHEMA = {
 
         { name: 'browserName', type: 'STRING' },
         { name: 'osName', type: 'STRING' },
-        { name: 'deviceType', type: 'STRING' }
+        { name: 'deviceType', type: 'STRING' },
+
+        { name: 'cs', type: 'STRING' },
+        { name: 'cm', type: 'STRING' },
+        { name: 'cn', type: 'STRING' },
+        { name: 'ck', type: 'STRING' },
+        { name: 'cc', type: 'STRING' },
+        { name: 'dr', type: 'STRING' }
     ]
 };
 
@@ -424,7 +431,14 @@ class BigQueryStorage extends BaseBigQueryStorage {
             timeZone,
             browserName = null,
             osName = null,
-            deviceType = null
+            deviceType = null,
+
+            cs = null,
+            cm = null,
+            cn = null,
+            ck = null,
+            cc = null,
+            dr = null
         } = metadata;
 
         await this._insert(this.SESSIONS, [
@@ -445,7 +459,13 @@ class BigQueryStorage extends BaseBigQueryStorage {
                 feedback,
                 browserName,
                 osName,
-                deviceType
+                deviceType,
+                cs,
+                cm,
+                cn,
+                ck,
+                cc,
+                dr
             }
         ]);
     }
