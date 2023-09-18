@@ -5,13 +5,13 @@
 
 const isSubset = require('is-subset');
 const deepExtend = require('deep-extend');
-const { BigQuery } = require('@google-cloud/bigquery');
 
 /** @typedef {import('@google-cloud/bigquery').BigQueryOptions['credentials']} Credentials */
 /** @typedef {import('@google-cloud/bigquery').TableMetadata} TableMetadata */
 
 /** @typedef {import('wingbot/src/analytics/onInteractionHandler').IGALogger} IGALogger */
 /** @typedef {import('@google-cloud/bigquery').Table} Table */
+/** @typedef {import('@google-cloud/bigquery').Dataset} Dataset */
 
 /* eslint object-curly-newline: 0 */
 
@@ -38,14 +38,12 @@ class BaseBigQueryStorage {
      * @param {boolean} [options.passiveSchema] - disables automatic topology updates
      */
     constructor (googleCredentials, projectId, dataset, topology, options = {}) {
-        this._client = new BigQuery({
-            credentials: googleCredentials,
-            projectId
-        });
+        this._client = null;
+        this._googleCredentials = googleCredentials;
 
         this._projectId = projectId;
         this._dataset = dataset;
-        this._db = this._client.dataset(dataset);
+        this._cachedDb = null;
 
         this._log = options.log || console;
         this._passiveSchema = !!options.passiveSchema;
@@ -61,7 +59,33 @@ class BaseBigQueryStorage {
 
         /** @type {TableMetadata[]} */
         this.topology = topology;
+        this._lib = null;
+    }
 
+    /**
+     * @returns {import('@google-cloud/bigquery')}
+     */
+    get _bigquery () {
+        if (this._lib === null) {
+            // eslint-disable-next-line global-require
+            this._lib = require('@google-cloud/bigquery');
+        }
+        return this._lib;
+    }
+
+    /**
+     * @returns {Dataset}
+     */
+    get _db () {
+        if (this._cachedDb === null) {
+            this._client = new this._bigquery.BigQuery({
+                credentials: this._googleCredentials,
+                projectId: this._projectId
+            });
+
+            this._cachedDb = this._client.dataset(this._dataset);
+        }
+        return this._cachedDb;
     }
 
     preHeat () {
