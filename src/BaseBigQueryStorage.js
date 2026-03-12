@@ -34,7 +34,7 @@ class BaseBigQueryStorage {
      * @param {TableMetadata[]} topology
      * @param {object} [options]
      * @param {Logger} [options.log]
-     * @param {boolean} [options.throwExceptions]
+     * @param {boolean|2} [options.throwExceptions]
      * @param {boolean} [options.passiveSchema] - disables automatic topology updates
      */
     constructor (googleCredentials, projectId, dataset, topology, options = {}) {
@@ -47,7 +47,7 @@ class BaseBigQueryStorage {
 
         this._log = options.log || console;
         this._passiveSchema = !!options.passiveSchema;
-        this._throwExceptions = !!options.throwExceptions;
+        this._throwExceptions = options.throwExceptions === 2 ? 2 : !!options.throwExceptions;
 
         this._schemaUpdated = null;
 
@@ -228,6 +228,9 @@ class BaseBigQueryStorage {
         }
         try {
             const db = await this.db();
+            if (this._throwExceptions === 2) {
+                this._log.log(`BigQueryStorage: insert to "${table}"`, data);
+            }
             await db.table(table).insert(data);
         } catch (e) {
             let details = null;

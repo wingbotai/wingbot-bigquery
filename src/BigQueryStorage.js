@@ -192,7 +192,7 @@ class BigQueryStorage extends BaseBigQueryStorage {
      * @param {string} dataset
      * @param {object} [options]
      * @param {Logger} [options.log]
-     * @param {boolean} [options.throwExceptions]
+     * @param {boolean|2} [options.throwExceptions]
      * @param {boolean} [options.passiveSchema] - disables automatic topology updates
      */
     constructor (googleCredentials, projectId, dataset, options = {}) {
@@ -621,7 +621,7 @@ class BigQueryStorage extends BaseBigQueryStorage {
                 datetime: this._dateTime(ts, timeZone),
                 date: this._date(sessionStart, timeZone),
                 type: e.type,
-                category: e.category,
+                category: `${e.category}`.substring(0, 3),
                 action: this._nullable(e.action),
                 label: this._nullable(e.label),
                 value: typeof e.value === 'number' ? e.value : null,
@@ -635,6 +635,17 @@ class BigQueryStorage extends BaseBigQueryStorage {
             this._insert(this.EVENTS, events),
             this._insert(this.PAGE_VIEWS, pageViews)
         ]);
+
+        if (this._throwExceptions === 2) {
+            this._log.log('BigQueryStorage: inserts', {
+                pageId,
+                senderId,
+                trackingEvents,
+                conversations: conversations.length,
+                events: events.length,
+                pageViews: pageViews.length
+            });
+        }
         if (this._throwExceptions) {
             this._log.log(`BigQueryStorage: inserts\t${Date.now() - d}`);
         }
