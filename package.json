@@ -8,7 +8,7 @@
   "main": "index.js",
   "scripts": {
     "test": "npm run test:lint && npm run test:unit",
-    "test:unit": "cross-env mocha --exit ./test",
+    "test:unit": "vitest run",
     "test:lint": "eslint --ext .js test src"
   },
   "repository": {
@@ -28,17 +28,16 @@
   },
   "homepage": "https://github.com/wingbotai/wingbot-bigquery#readme",
   "devDependencies": {
-    "cross-env": "^7.0.3",
     "eslint": "^8.29.0",
     "eslint-config-airbnb": "^19.0.4",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.26.0",
     "eslint-plugin-jsx-a11y": "^6.6.1",
-    "mocha": "^10.1.0",
+    "vitest": "^4.0.18",
     "wingbot": "^3.61.2"
   },
   "dependencies": {
-    "@google-cloud/bigquery": "^6.1.0",
+    "@google-cloud/bigquery": "^6.0.1",
     "deep-extend": "^0.6.0",
     "is-subset": "^0.1.1",
     "webalize": "^0.1.0"

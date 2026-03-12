@@ -3,7 +3,6 @@
  */
 'use strict';
 
-// const assert = require('assert');
 const {
     Router, Tester, onInteractionHandler, TrackingType, TrackingCategory
 } = require('wingbot');

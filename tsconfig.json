@@ -2,7 +2,11 @@
     "compileOnSave": false,
     "compilerOptions": {
         "module": "commonjs",
-        "lib": ["ES2021", "dom.iterable", "dom"],
+        "lib": [
+            "ES2021",
+            "dom.iterable",
+            "dom"
+        ],
         "target": "ES2021",
         "esModuleInterop": true,
         "allowSyntheticDefaultImports": true,
@@ -12,9 +16,30 @@
         "resolveJsonModule": true,
         "maxNodeModuleJsDepth": 2,
         "forceConsistentCasingInFileNames": true,
-        "moduleResolution": "node"
+        "moduleResolution": "node",
+        "types": [
+            "vitest/globals"
+        ]
     },
-    "typeAcquisition": {"enable": true},
-    "exclude": ["doc", "docs", "coverage", "public", "node_modules", "dist", "botDist", "extensions"],
-    "include": ["src","lib","types","bot","test","routes"]
+    "typeAcquisition": {
+        "enable": true
+    },
+    "exclude": [
+        "doc",
+        "docs",
+        "coverage",
+        "public",
+        "node_modules",
+        "dist",
+        "botDist",
+        "extensions"
+    ],
+    "include": [
+        "src",
+        "lib",
+        "types",
+        "bot",
+        "test",
+        "routes"
+    ]
 }
